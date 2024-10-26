@@ -11,7 +11,7 @@ from aiida_quantumespresso.common.types import RelaxType
 from aiida_quantumespresso.workflows.protocols.utils import ProtocolMixin
 from aiida.orm import StructureData
 
-EnvRelaxPhononWorkChain = WorkflowFactory("aiida.pka.env_relax_phonon")
+EnvRelaxPhononWorkChain = WorkflowFactory("environ.pka.env_relax_phonon")
 
 class AcidBaseWorkChain(WorkChain, ProtocolMixin):
     """

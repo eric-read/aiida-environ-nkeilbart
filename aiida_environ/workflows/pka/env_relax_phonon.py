@@ -39,6 +39,7 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
         super().define(spec)
         spec.expose_inputs(
             PwRelaxWorkChain,
+            namespace='scf',
             namespace_options={
                 'help': (
                     'Inputs for the `EnvPwRelaxWorkChain`'
@@ -188,32 +189,22 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
         args = (code, structure, protocol)
         builder = cls.get_builder()
         inputs = cls.get_protocol_inputs(protocol, overrides)
-
-        vacuum = PwRelaxWorkChain.get_builder_from_protocol(
+        scf = PwRelaxWorkChain.get_builder_from_protocol(
             *args,
             relax_type=relax_type,
             overrides=inputs.get('scf', None), 
             options=options,
             **kwargs
         )
-        solution = PwRelaxWorkChain.get_builder_from_protocol(
-            *args,
-            relax_type=relax_type,
-            overrides=inputs.get('scf', None), 
-            options=options,
-            **kwargs
-        )
-        phonopy_solution = PhononWorkChain.get_builder_from_protocol(
+        phonon = PhononWorkChain.get_builder_from_protocol(
             *args,
             phonopy_code=phonopy_code,
             options=options,
             **kwargs,
             clean_workdir=orm.Bool(True),
         )
-        vacuum["base"]["pw"].pop("structure", None)
-        vacuum.pop("clean_workdir", None)
-        solution["base"]["pw"].pop("structure", None)
-        solution.pop("clean_workdir", None)
+        scf["base"]["pw"].pop("structure", None)
+        scf.pop("clean_workdir", None)
 
         # Declare the environ.in file input
         environ_input = {
@@ -230,26 +221,17 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
                 'solvent_mode': 'ionic',
             },
             'ELECTROSTATIC': {
-                'pbc_correction': 'none',
-                'pbc_dim': 0,
                 'solver': 'cg',
-                'tol': 1.E-10
+                'tol': 1.E-11
             }
         }
 
-        solution['base']['pw']['environ_parameters'] = orm.Dict(dict=environ_input)
-        phonopy_solution['scf']['environ_parameters'] = orm.Dict(dict=environ_input)
-        environ_input['ENVIRON']['env_static_permittivity'] = 1.0
-        environ_input['ENVIRON']['env_pressure'] = 0.0
-        environ_input['ENVIRON']['env_surface_tension'] = 0.0
-        environ_input['ELECTROSTATIC']['solver'] = 'direct'
-        vacuum['base']['pw']['environ_parameters'] = orm.Dict(dict=environ_input)
+        scf['base']['pw']['environ_parameters'] = orm.Dict(dict=environ_input)
 
         builder.code = code
         builder.phonopy_code = phonopy_code
-        builder.vacuum = vacuum
-        builder.solution = solution
-        builder.phonopy_solution = phonopy_solution
+        builder.scf = scf
+        builder.phonon = phonon
         builder.structure = structure
         builder.clean_workdir = orm.Bool(clean_workdir)
         builder.clean_phonon_workdir = orm.Bool(clean_phonon_workdir)
@@ -265,52 +247,6 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
         )
         return
 
-    # def run_vacuum(self):
-    #     """
-    #     Run vacuum environment relaxation.
-    #     """
-    #     inputs = self.ctx.pwrelax_input
-    #     inputs.base.pw.environ_parameters = self.inputs.vacuum.environ_parameters
-    #
-    #     # inputs.metadata.call_link_label = f'vacuum_scf'
-    #     self.ctx.vacuum_scf = inputs
-    #     future = self.submit(PwRelaxWorkChain, **inputs)
-    #     self.report(
-    #         f'submitting vacuum `EnvPwRelaxWorkChain` <PK={future.pk}> '
-    #         f'<UUID={future.uuid}>.'
-    #     )
-    #     self.to_context(**{f'scf': future})
-    #     return
-    #
-    # def check_vacuum(self):
-    #     """
-    #     Inspect output of vacuum simulations.
-    #     """
-    #     workchain = self.ctx.vacuum.scf
-    #
-    #     if not workchain.is_finished_ok:
-    #         self.report(
-    #             f'Vacuum `EnvPwRelaxWorkChain` with <PK={workchain.pk}> '
-    #             f'<UUID={workchain.uuid} failed with exit status '
-    #             f'{workchain.exit_status}'
-    #         )
-    #         return self.exit_codes.ERROR_ENVIRON_VACUUM_CALCULATION_FAILED
-    #     else:
-    #         self.report('Vacuum optimization finished')
-    #         self.out_many(
-    #             self.exposed_outputs(
-    #                 self.ctx.vacuum.scf,
-    #                 PwRelaxWorkChain,
-    #                 namespace='vacuum.scf',
-    #                 agglomerate=False
-    #             )
-    #         )
-    #
-    #     self.ctx.current_structure = workchain.output.output_structure
-    #     self.ctx.vacuum_structure = workchain.output.output_structure
-    #
-    #     return
-
     def run_relax(self):
         """
         Run solution environment simulations for all structures.
@@ -318,11 +254,9 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
         inputs = AttributeDict(
             self.exposed_inputs(
                 PwRelaxWorkChain,
+                namespace='scf'
             )
         )
-        # inputs = self.ctx.pwrelax_input
-        # inputs.base.pw.environ_parameters = self.inputs.solution.environ_parameters
-        # inputs.base.pw.structure = self.ctx.current_structure
 
         # inputs.metadata.call_link_label = f'CALL'
         self.ctx.scf_inputs = inputs

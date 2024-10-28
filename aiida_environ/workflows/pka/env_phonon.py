@@ -6,7 +6,9 @@
 # The code is hosted on GitHub at https://github.com/bastonero/aiida-vibroscopy #
 # For further information on the license, see the LICENSE.txt file              #
 #################################################################################
-"""Class for phonons with finite displacements."""
+"""Class for phonons with finite displacements.
+   PhononWorkChain from aiida-vibroscopy plugin modified for Environ calculations
+"""
 from __future__ import annotations
 
 import time
@@ -19,36 +21,36 @@ from aiida.plugins import CalculationFactory, DataFactory, WorkflowFactory
 from aiida_quantumespresso.calculations.functions.create_kpoints_from_distance import create_kpoints_from_distance
 from aiida_quantumespresso.workflows.protocols.utils import ProtocolMixin
 
-#from aiida_vibroscopy.calculations.spectra_utils import get_supercells_for_hubbard
-#from aiida_vibroscopy.common.properties import PhononProperty
-#from aiida_vibroscopy.utils.validation import validate_matrix, validate_tot_magnetization
+from aiida_vibroscopy.calculations.spectra_utils import get_supercells_for_hubbard
+from aiida_vibroscopy.common.properties import PhononProperty
+from aiida_vibroscopy.utils.validation import validate_matrix, validate_tot_magnetization
 
 __all__ = ('EnvPhononWorkChain',)
 
 PreProcessData = DataFactory('phonopy.preprocess')
 PhonopyData = DataFactory('phonopy.phonopy')
-#HubbardStructureData = DataFactory('quantumespresso.hubbard_structure')
+HubbardStructureData = DataFactory('quantumespresso.hubbard_structure')
 
 PhonopyCalculation = CalculationFactory('phonopy.phonopy')
 
 EnvPwBaseWorkChain = WorkflowFactory('environ.pw.base')
 
 
-# @calcfunction
-# def get_supercell_hubbard_structure(hubbard_structure, supercell, thr: orm.Float = None):
-#     """Return the HubbardStructureData of the supercell of the primitive structure.
-#
-#     :param hubbard_structure: (Hubbard)StructureData containing the reference Hubbard parameters
-#     :param supercell: StructureData referring to a supercell of the input structure. It should be
-#         commensurate to the pristine one
-#     :param thr: threshold for symmetry analysis
-#     """
-#     #from aiida_quantumespresso.utils.hubbard import HubbardUtils
-#
-#     thr = 1.0e-5 if thr is None else thr.value
-#
-#     hubbard_utils = HubbardUtils(hubbard_structure=hubbard_structure)
-#     return hubbard_utils.get_hubbard_for_supercell(supercell=supercell, thr=thr)
+@calcfunction
+def get_supercell_hubbard_structure(hubbard_structure, supercell, thr: orm.Float = None):
+    """Return the HubbardStructureData of the supercell of the primitive structure.
+
+    :param hubbard_structure: (Hubbard)StructureData containing the reference Hubbard parameters
+    :param supercell: StructureData referring to a supercell of the input structure. It should be
+        commensurate to the pristine one
+    :param thr: threshold for symmetry analysis
+    """
+    from aiida_quantumespresso.utils.hubbard import HubbardUtils
+
+    thr = 1.0e-5 if thr is None else thr.value
+
+    hubbard_utils = HubbardUtils(hubbard_structure=hubbard_structure)
+    return hubbard_utils.get_hubbard_for_supercell(supercell=supercell, thr=thr)
 
 
 class EnvPhononWorkChain(WorkChain, ProtocolMixin):
@@ -75,10 +77,12 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
         spec.input(
             'supercell_matrix', valid_type=orm.List, required=False,
             help='Supercell matrix that defines the supercell from the unitcell.',
+            validator=validate_matrix,
         )
         spec.input(
             'primitive_matrix', valid_type=orm.List, required=False,
             help='Primitive matrix that defines the primitive cell from the unitcell.',
+            validator=validate_matrix,
         )
         spec.input_namespace(
             'symmetry',
@@ -225,11 +229,12 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
         phonopy_code=None,
         overrides=None,
         options=None,
+        phonon_property=PhononProperty.NONE,
         **kwargs
     ):
         """Return a builder prepopulated with inputs selected according to the chosen protocol.
 
-        :param pw_code: the ``Code`` instance configured for the ``quantumespresso.pw`` plugin.
+        :param pw_code: the ``Code`` instance configured for the ``environ.pw`` plugin.
         :param structure: the ``StructureData`` instance to use.
         :param phonopy_code: the ``Code`` instance configured for the ``phonopy.phonopy`` plugin.
         :param protocol: protocol to use, if not specified, the default will be used.
@@ -245,12 +250,12 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
         if isinstance(phonopy_code, str):
             phonopy_code = orm.load_code(phonopy_code)
 
-        # type_check(phonon_property, PhononProperty)
+        type_check(phonon_property, PhononProperty)
 
         if phonopy_code is not None:
             type_check(phonopy_code, orm.AbstractCode)
-        # elif phonon_property.value is not None:
-        #     raise ValueError('`PhononProperty` is specified, but `phonopy_code` is None')
+        elif phonon_property.value is not None:
+            raise ValueError('`PhononProperty` is specified, but `phonopy_code` is None')
 
         inputs = cls.get_protocol_inputs(protocol, overrides)
         environ = inputs.get('environ', None)
@@ -274,25 +279,36 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
         builder.phonopy = phonopy
         builder.settings = inputs.get('settings', {})
         builder.clean_workdir = orm.Bool(inputs['clean_workdir'])
+        if 'displacement_generator' in inputs:
+            builder['displacement_generator'] = orm.Dict(inputs['displacement_generator'])
+        if 'primitive_matrix' in inputs:
+            builder['primitive_matrix'] = orm.List(inputs['primitive_matrix'])
 
         if phonopy_code is None:
             builder.pop('phonopy')
+        else:
+            builder.phonopy.code = phonopy_code
+            parameters = phonon_property.value
+            if overrides:
+                parameter_overrides = overrides.get('phonopy', {}).get('parameters', {})
+                parameters = recursive_merge(parameters, parameter_overrides)
+            builder.phonopy.parameters = orm.Dict(parameters)
 
         return builder
 
     def set_ctx_variables(self):
         """Set `is_magnetic` and hubbard-related context variables."""
         parameters = self.inputs.scf.pw.parameters.get_dict()
-        # nspin = parameters.get('SYSTEM', {}).get('nspin', 1)
-        # self.ctx.is_magnetic = (nspin != 1)
-        # self.ctx.is_insulator = True
-        # self.ctx.plus_hubbard = False
-        # self.ctx.old_plus_hubbard = False
+        nspin = parameters.get('SYSTEM', {}).get('nspin', 1)
+        self.ctx.is_magnetic = (nspin != 1)
+        self.ctx.is_insulator = True
+        self.ctx.plus_hubbard = False
+        self.ctx.old_plus_hubbard = False
 
-        # if parameters.get('SYSTEM', {}).get('lda_plus_u_kind', None) == 2:
-        #     self.ctx.old_plus_hubbard = True
-        # if isinstance(self.inputs.scf.pw.structure, HubbardStructureData):
-        #     self.ctx.plus_hubbard = True
+        if parameters.get('SYSTEM', {}).get('lda_plus_u_kind', None) == 2:
+            self.ctx.old_plus_hubbard = True
+        if isinstance(self.inputs.scf.pw.structure, HubbardStructureData):
+            self.ctx.plus_hubbard = True
 
     def setup(self):
         """Set up the workflow generating the PreProcessData."""
@@ -317,11 +333,11 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
 
         self.ctx.supercell = self.inputs.scf.pw.structure
 
-        # if not self.ctx.old_plus_hubbard:
-        #     self.ctx.supercell = self.ctx.preprocess_data.calcfunctions.get_supercell()
-        #
-        # if self.ctx.plus_hubbard:
-        #     self.ctx.supercell = get_supercell_hubbard_structure(self.inputs.scf.pw.structure, self.ctx.supercell)
+        if not self.ctx.old_plus_hubbard:
+            self.ctx.supercell = self.ctx.preprocess_data.calcfunctions.get_supercell()
+
+        if self.ctx.plus_hubbard:
+            self.ctx.supercell = get_supercell_hubbard_structure(self.inputs.scf.pw.structure, self.ctx.supercell)
 
     def set_reference_kpoints(self):
         """Set the reference kpoints for the all PwBaseWorkChains."""
@@ -357,8 +373,6 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
         inputs.metadata.call_link_label = key
         inputs.clean_workdir = orm.Bool(False)  # the folder is needed for next calculations
 
-        print(inputs)
-
         node = self.submit(EnvPwBaseWorkChain, **inputs)
         self.to_context(**{key: node})
         self.report(f'launching base supercell scf EnvPwBaseWorkChain<{node.pk}>')
@@ -372,22 +386,21 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
             self.report(f'base supercell scf failed with exit status {workchain.exit_status}')
             return self.exit_codes.ERROR_FAILED_BASE_SCF
 
-        # parameters = workchain.outputs.output_parameters.dict
-        # if parameters.occupations == 'smearing':
-        #     bands = workchain.outputs.output_band
-        #     fermi_energy = parameters.fermi_energy
-        #     self.ctx.is_insulator, _ = orm.find_bandgap(bands, fermi_energy=fermi_energy)
+        parameters = workchain.outputs.output_parameters.dict
+        if parameters.occupations == 'smearing':
+            bands = workchain.outputs.output_band
+            fermi_energy = parameters.fermi_energy
+            self.ctx.is_insulator, _ = orm.find_bandgap(bands, fermi_energy=fermi_energy)
 
     def run_forces(self):
         """Run an scf for each supercell with displacements."""
-        # if self.ctx.plus_hubbard or self.ctx.old_plus_hubbard:
-        #     supercells = get_supercells_for_hubbard(
-        #         preprocess_data=self.ctx.preprocess_data,
-        #         ref_structure=self.ctx.supercell,
-        #     )
-        # else:
-        #     supercells = self.ctx.preprocess_data.calcfunctions.get_supercells_with_displacements()
-        supercells = self.ctx.preprocess_data.calcfunctions.get_supercells_with_displacements()
+        if self.ctx.plus_hubbard or self.ctx.old_plus_hubbard:
+            supercells = get_supercells_for_hubbard(
+                preprocess_data=self.ctx.preprocess_data,
+                ref_structure=self.ctx.supercell,
+            )
+        else:
+            supercells = self.ctx.preprocess_data.calcfunctions.get_supercells_with_displacements()
 
         self.out('supercells', supercells)
 
@@ -413,18 +426,18 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
             parameters.setdefault('SYSTEM', {})
             parameters.setdefault('ELECTRONS', {})
 
-            # if self.ctx.is_magnetic and self.ctx.is_insulator:
-            #     parameters['SYSTEM']['occupations'] = 'fixed'
-            #
-            #     for name in ('smearing', 'degauss', 'starting_magnetization'):
-            #         parameters['SYSTEM'].pop(name, None)
-            #
-            #     parameters['SYSTEM']['nbnd'] = base_out.output_parameters.base.attributes.get('number_of_bands')
-            #     tot_magnetization = base_out.output_parameters.base.attributes.get('total_magnetization')
-            #     parameters['SYSTEM']['tot_magnetization'] = abs(round(tot_magnetization))
-            #
-            #     if validate_tot_magnetization(tot_magnetization):
-            #         return self.exit_codes.ERROR_NON_INTEGER_TOT_MAGNETIZATION
+            if self.ctx.is_magnetic and self.ctx.is_insulator:
+                parameters['SYSTEM']['occupations'] = 'fixed'
+
+                for name in ('smearing', 'degauss', 'starting_magnetization'):
+                    parameters['SYSTEM'].pop(name, None)
+
+                parameters['SYSTEM']['nbnd'] = base_out.output_parameters.base.attributes.get('number_of_bands')
+                tot_magnetization = base_out.output_parameters.base.attributes.get('total_magnetization')
+                parameters['SYSTEM']['tot_magnetization'] = abs(round(tot_magnetization))
+
+                if validate_tot_magnetization(tot_magnetization):
+                    return self.exit_codes.ERROR_NON_INTEGER_TOT_MAGNETIZATION
 
             parameters['CONTROL']['tprnfor'] = True
             parameters['CONTROL']['calculation'] = 'scf'
@@ -436,7 +449,7 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
             environ_parameters['ENVIRON']['environ_restart'] = True
             inputs.pw.environ_parameters = orm.Dict(environ_parameters)
 
-            #inputs.clean_workdir = self.inputs.clean_workdir
+            inputs.clean_workdir = self.inputs.clean_workdir
             inputs.metadata.label = label
             inputs.metadata.call_link_label = label
 

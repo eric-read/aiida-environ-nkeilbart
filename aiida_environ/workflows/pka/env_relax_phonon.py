@@ -28,7 +28,7 @@ def validate_inputs(inputs, _):
 
 class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
     """
-    Workchain to perform pKa calculations using Quantum ESPRESSO pw.x 
+    Workchain to perform relax+Phonon calculations using Quantum ESPRESSO pw.x
     with Environ and Phonopy.
     """
 
@@ -37,25 +37,11 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
         """Define the process specification."""
         # yapf: disable
         super().define(spec)
-        #spec.input(
-        #    "environ_parameters",
-        #    required=True,
-        #    valid_type=orm.Dict,
-        #    help=(
-        #        'Environ Inputs for the `PwRelaxWorkChain` specifically for '
-        #        'the main relax loop in solution.'
-        #    ),
-        #)
         spec.expose_inputs(
             PwRelaxWorkChain,
-            exclude=(
-                'base',
-                'base_final_scf'
-            ),
             namespace_options={
                 'help': (
-                    'Inputs for the `PwRelaxWorkChain` that are shared in '
-                    'both vacuum and solution calculations.'
+                    'Inputs for the `EnvPwRelaxWorkChain`'
                 )
             }
         )
@@ -114,50 +100,31 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
         spec.outline(
             cls.setup,
 
-            cls.run_vacuum,
-            cls.check_vacuum,
-
-            cls.run_solution,
-            cls.check_solution,
+            cls.run_relax,
+            cls.check_relax,
 
             cls.run_environ_phonon,
             cls.check_environ_phonon,
-
-            cls.results,
         )
         spec.expose_outputs(
             PwRelaxWorkChain,
-            namespace='environ.vacuum'
-        )
-        spec.expose_outputs(
-            PwRelaxWorkChain,
-            namespace='environ.solution'
+            namespace='scf'
         )
         spec.expose_outputs(
             PhononWorkChain,
-            namespace='environ.phonon'
+            namespace='phonon'
         )
-        #TODO: Add exit_codes for failed phonon calculations
 
         spec.exit_code(
             403,
-            'ERROR_ENVIRON_VACUUM_CALCULATION_FAILED',
-            message='the environ vacuum PwRelaxWorkChain failed'
+            'ERROR_ENVIRON_RELAX_CALCULATION_FAILED',
+            message='the environ PwRelaxWorkChain failed'
         )
         spec.exit_code(
             404,
-            'ERROR_ENVIRON_SOLUTION_CALCULATION_FAILED',
-            message='the environ solution PwRelaxWorkChain failed'
-        )
-        spec.exit_code(
-            405,
             'ERROR_ENVIRON_PHONON_CALCULATION_FAILED',
             message='The solution phonon PhononWorkChain failed '
         )
-
-
-        #TODO add options for separately controlling the resources used 
-        #for relaxation, vacuum phonons, and solution phonons
 
     @classmethod
     def get_protocol_filepath(cls):
@@ -298,97 +265,102 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
         )
         return
 
-    def run_vacuum(self):
-        """
-        Run vacuum environment relaxation.
-        """
-        inputs = self.ctx.pwrelax_input
-        inputs.base.pw.environ_parameters = self.inputs.vacuum.environ_parameters
+    # def run_vacuum(self):
+    #     """
+    #     Run vacuum environment relaxation.
+    #     """
+    #     inputs = self.ctx.pwrelax_input
+    #     inputs.base.pw.environ_parameters = self.inputs.vacuum.environ_parameters
+    #
+    #     # inputs.metadata.call_link_label = f'vacuum_scf'
+    #     self.ctx.vacuum_scf = inputs
+    #     future = self.submit(PwRelaxWorkChain, **inputs)
+    #     self.report(
+    #         f'submitting vacuum `EnvPwRelaxWorkChain` <PK={future.pk}> '
+    #         f'<UUID={future.uuid}>.'
+    #     )
+    #     self.to_context(**{f'scf': future})
+    #     return
+    #
+    # def check_vacuum(self):
+    #     """
+    #     Inspect output of vacuum simulations.
+    #     """
+    #     workchain = self.ctx.vacuum.scf
+    #
+    #     if not workchain.is_finished_ok:
+    #         self.report(
+    #             f'Vacuum `EnvPwRelaxWorkChain` with <PK={workchain.pk}> '
+    #             f'<UUID={workchain.uuid} failed with exit status '
+    #             f'{workchain.exit_status}'
+    #         )
+    #         return self.exit_codes.ERROR_ENVIRON_VACUUM_CALCULATION_FAILED
+    #     else:
+    #         self.report('Vacuum optimization finished')
+    #         self.out_many(
+    #             self.exposed_outputs(
+    #                 self.ctx.vacuum.scf,
+    #                 PwRelaxWorkChain,
+    #                 namespace='vacuum.scf',
+    #                 agglomerate=False
+    #             )
+    #         )
+    #
+    #     self.ctx.current_structure = workchain.output.output_structure
+    #     self.ctx.vacuum_structure = workchain.output.output_structure
+    #
+    #     return
 
-        # inputs.metadata.call_link_label = f'vacuum_scf'
-        self.ctx.vacuum_scf = inputs
-        future = self.submit(PwRelaxWorkChain, **inputs)
-        self.report(
-            f'submitting vacuum `EnvPwRelaxWorkChain` <PK={future.pk}> '
-            f'<UUID={future.uuid}>.'
-        )
-        self.to_context(**{f'vacuum.scf': future})
-        return
-
-    def check_vacuum(self):
-        """
-        Inspect output of vacuum simulations.
-        """
-        workchain = self.ctx.vacuum.scf
-
-        if not workchain.is_finished_ok:
-            self.report(
-                f'Vacuum `EnvPwRelaxWorkChain` with <PK={workchain.pk}> '
-                f'<UUID={workchain.uuid} failed with exit status '
-                f'{workchain.exit_status}'
-            )
-            return self.exit_codes.ERROR_ENVIRON_VACUUM_CALCULATION_FAILED
-        else:
-            self.report('Vacuum optimization finished')
-            self.out_many(
-                self.exposed_outputs(
-                    self.ctx.vacuum.scf, 
-                    PwRelaxWorkChain, 
-                    namespace='vacuum.scf', 
-                    agglomerate=False
-                )
-            )
-        
-        self.ctx.current_structure = workchain.output.output_structure
-        self.ctx.vacuum_structure = workchain.output.output_structure
-
-        return
-
-    def run_solution(self):
+    def run_relax(self):
         """
         Run solution environment simulations for all structures.
         """
-        inputs = self.ctx.pwrelax_input
-        inputs.base.pw.environ_parameters = self.inputs.solution.environ_parameters
-        inputs.base.pw.structure = self.ctx.current_structure
+        inputs = AttributeDict(
+            self.exposed_inputs(
+                PwRelaxWorkChain,
+            )
+        )
+        # inputs = self.ctx.pwrelax_input
+        # inputs.base.pw.environ_parameters = self.inputs.solution.environ_parameters
+        # inputs.base.pw.structure = self.ctx.current_structure
 
         # inputs.metadata.call_link_label = f'CALL'
-        self.ctx.solution_scf = inputs
+        self.ctx.scf_inputs = inputs
         future = self.submit(PwRelaxWorkChain, **inputs)
         self.report(
             f'submitting solution `EnvPwRelaxWorkChain` <PK={future.pk}> '
             f'<UUID={future.uuid}>.'
         )
-        self.to_context(**{f'solution.scf': future})
+        self.to_context(**{f'scf': future})
         return
 
 
-    def check_solution(self):
+    def check_relax(self):
         """
         Inspect output of vacuum simulations.
         """
-        workchain = self.ctx.solution.scf
+        workchain = self.ctx.scf
 
         if not workchain.is_finished_ok:
             self.report(
                 f'Solution `EnvPwRelaxWorkChain` with <PK={workchain.pk}> <UUID={workchain.uuid} failed'
                 f'with exit status {workchain.exit_status}')
-            return self.exit_codes.ERROR_ENVIRON_SOLUTION_CALCULATION_FAILED
+            return self.exit_codes.ERROR_ENVIRON_RELAX_CALCULATION_FAILED
         else:
             self.report('Solution optimization finished')
-            self.out_many(self.exposed_outputs(self.ctx.solution.scf, PwRelaxWorkChain, namespace='solution.scf', agglomerate=False))
+            self.out_many(self.exposed_outputs(self.ctx.scf, PwRelaxWorkChain, namespace='scf', agglomerate=False))
 
         return
 
     def run_environ_phonon(self):
-        scf_inputs = self.ctx.solution_scf
+        scf_inputs = self.ctx.scf_inputs
         phonon_inputs = AttributeDict(
             self.exposed_inputs(
                 PhononWorkChain,
                 namespace='phonon'
             )
         )
-        structure = self.ctx.solution.scf.outputs.output_structure
+        structure = self.ctx.scf.outputs.output_structure
         parameters = scf_inputs.base.pw.parameters.get_dict()
         parameters['CONTROL']['calculation'] = 'scf'
         parameters['CONTROL']['tprnfor'] = True
@@ -402,7 +374,7 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
         environ_parameters['ENVIRON']['environ_restart'] = True
         scf_inputs.base.pw.environ_parameters = environ_parameters
         scf_inputs.base.pw.parent_folder = \
-            self.ctx.solution.scf.outputs.remote_folder
+            self.ctx.scf.outputs.remote_folder
         phonon_inputs.scf = scf_inputs.base
         phonon_inputs.scf.pw.structure = structure
         # phonon_inputs.metadata.call_link_label = f'CALL'
@@ -420,11 +392,11 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
             f'submitting `EnvPhononWorkChain` in solution <PK={future.pk}> '
             f'<UUID={future.uuid}>.'
         ))
-        self.to_context(**{f'solution.phonon': future})
+        self.to_context(**{f'phonon': future})
         return
 
     def check_environ_phonon(self):
-        workchain = self.ctx.solution.phonon
+        workchain = self.ctx.phonon
         if not workchain.is_finished_ok:
             self.report((
                 f'Solution `EnvPhononWorkChain` with <PK={workchain.pk}> '
@@ -436,15 +408,12 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
             self.report('Solution phonon calculation finished')
             self.out_many(
                 self.exposed_outputs(
-                    self.ctx.solution.phonon,
+                    self.ctx.phonon,
                     PhononWorkChain, 
-                    namespace='environ.phonon', 
+                    namespace='phonon',
                     agglomerate=False
                     )
                 )
-        return
-
-    def results(self):
         return
 
     def on_terminated(self):

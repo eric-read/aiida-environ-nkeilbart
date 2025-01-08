@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import enum
 import time
 
 from aiida import orm
@@ -22,8 +23,8 @@ from aiida_quantumespresso.calculations.functions.create_kpoints_from_distance i
 from aiida_quantumespresso.workflows.protocols.utils import ProtocolMixin
 
 from aiida_vibroscopy.calculations.spectra_utils import get_supercells_for_hubbard
-from aiida_vibroscopy.common.properties import PhononProperty
-from aiida_vibroscopy.utils.validation import validate_matrix, validate_tot_magnetization
+# from aiida_vibroscopy.common.properties import PhononProperty
+# from aiida_vibroscopy.utils.validation import validate_matrix, validate_tot_magnetization
 
 __all__ = ('EnvPhononWorkChain',)
 
@@ -52,6 +53,47 @@ def get_supercell_hubbard_structure(hubbard_structure, supercell, thr: orm.Float
     hubbard_utils = HubbardUtils(hubbard_structure=hubbard_structure)
     return hubbard_utils.get_hubbard_for_supercell(supercell=supercell, thr=thr)
 
+def validate_tot_magnetization(tot_magnetization: float, thr: float = 0.2) -> bool:
+    """Round the total magnetization input and return true if outside the threshold.
+
+    This is needed because 'tot_magnetization' must be an integer in the aiida-quantumespresso input parameters.
+    """
+    int_tot_magnetization = round(tot_magnetization, 0)
+    return abs(tot_magnetization - int_tot_magnetization) > thr
+
+
+def validate_matrix(value, _):
+    """Validate the `supercell_matrix` and `primitive_matrix` inputs."""
+    from aiida.orm import List
+    import numpy as np
+
+    if not isinstance(value, (list, List, np.ndarray)):
+        return 'value is not of the right type; only `list`, `aiida.orm.List` and `numpy.ndarray`'
+
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
+
+    if not len(value) == 3:
+        return 'need exactly 3 diagonal elements or 3x3 arrays.'
+
+    for row in value:
+        if isinstance(row, list):
+            if not len(row) in [0, 3]:
+                return 'matrix need to have 3x1 or 3x3 shape.'
+            for element in row:
+                if not isinstance(element, (int, float)):
+                    return (
+                        f'type `{type(element)}` of {element} is not an accepted '
+                        'type in matrix; only `int` and `float` are valid.'
+                    )
+
+class PhononProperty(enum.Enum):
+    """Enumeration to indicate the phonon properties to extract for a system."""
+
+    NONE = None
+    BANDS = {'band': 'auto'}
+    DOS = {'dos': True, 'mesh': 1000, 'write_mesh': False}
+    THERMODYNAMIC = {'tprop': True, 'mesh': 1000, 'write_mesh': False}
 
 class EnvPhononWorkChain(WorkChain, ProtocolMixin):
     """Class for computing force constants of phonons, without non-analytical corrections."""

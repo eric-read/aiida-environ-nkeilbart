@@ -40,6 +40,7 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
         spec.expose_inputs(
             PwRelaxWorkChain,
             namespace='scf',
+            exclude=('clean_workdir'),
             namespace_options={
                 'help': (
                     'Inputs for the `EnvPwRelaxWorkChain`'
@@ -67,7 +68,8 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
             valid_type=orm.Dict,
             required=False,
             serializer=to_aiida_type,
-            help="Parallelization options to pass to phonon calculations."
+            help="Parallelization options to use in pw subprocesses in"
+                 "phonon calculations."
         )
         spec.input(
             "phonon.options",
@@ -84,7 +86,7 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
             valid_type=orm.Bool,
             default=lambda: orm.Bool(False),
             help=(
-                'If `True`, work directories of all called calculation will '
+                'If `True`, work directories of all called calculations will '
                 'be cleaned at the end of execution.'
             )
         )
@@ -93,11 +95,11 @@ class EnvRelaxPhononWorkChain(WorkChain, ProtocolMixin):
             valid_type=orm.Bool,
             default=lambda: orm.Bool(True),
             help=(
-                'If `True`, work directories of all called calculations in '
-                'Phonon calculations will be cleaned at the end of execution.'
+                'If `True`, work directories of phonon calculations'
+                'will be cleaned at the end of execution.'
             )
         )
-        # spec.inputs.validator = validate_inputs
+        spec.inputs.validator = validate_inputs
         spec.outline(
             cls.setup,
 

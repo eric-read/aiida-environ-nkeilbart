@@ -17,7 +17,7 @@ PhononWorkChain = WorkflowFactory("environ.pka.env_phonon")
 
 def validate_inputs(inputs, _):
     """Validate the top level namespace."""
-    parameters = inputs["vacuum"]["base"]["pw"]["parameters"].get_dict()
+    parameters = inputs["scf"]["base"]["pw"]["parameters"].get_dict()
 
     if "relaxation_scheme" not in inputs and \
        "calculation" not in parameters.get("CONTROL", {}):

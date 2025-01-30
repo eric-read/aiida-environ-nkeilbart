@@ -9,6 +9,7 @@ class EnvironDielectric:
         self._static_permittivity = None
         self._optical_permittivity = None
         self._position = None
+        self._width = None
         self._spread = None
         self._dim = None
         self._axis = None
@@ -25,6 +26,7 @@ class EnvironDielectric:
             self.static_permittivity = environ_dielectric.static_permittivity
             self.optical_permittivity = environ_dielectric.optical_permittivity
             self.position = environ_dielectric.position
+            self.width = environ_dielectric.width
             self.spread = environ_dielectric.spread
             self.dim = environ_dielectric.dim
             self.axis = environ_dielectric.axis
@@ -38,6 +40,7 @@ class EnvironDielectric:
                 self.static_permittivity = raw["static_permittivity"]
                 self.optical_permittivity = raw["optical_permittivity"]
                 self.position = raw["position"]
+                self.width = raw['width']
                 self.spread = raw["spread"]
                 self.dim = raw["dim"]
                 self.axis = raw["axis"]
@@ -52,6 +55,7 @@ class EnvironDielectric:
                 self.static_permittivity = kwargs.pop("static_permittivity")
                 self.optical_permittivity = kwargs.pop("optical_permittivity")
                 self.position = kwargs.pop("position")
+                self.width = kwargs.pop("width")
                 self.spread = kwargs.pop("spread")
                 self.dim = kwargs.pop("dim")
                 self.axis = kwargs.pop("axis")
@@ -72,6 +76,7 @@ class EnvironDielectric:
             "static_permittivity": self.static_permittivity,
             "optical_permittivity": self.optical_permittivity,
             "position": self.position,
+            "width": self.width,
             "spread": self.spread,
             "dim": self.dim,
             "axis": self.axis,
@@ -143,6 +148,24 @@ class EnvironDielectric:
                 "Wrong format for position, must be a list of three float numbers."
             )
         self._position = internal_pos
+
+    @property
+    def width(self):
+        """Return the width of the dielectric region
+
+        Returns:
+            float: width
+        """
+        return self._width
+
+    @spread.setter
+    def width(self, value: float):
+        """Set the width of the dielectric region
+
+        Args:
+            value (float): width
+        """
+        self._width = float(value)
 
     @property
     def spread(self):
@@ -233,12 +256,13 @@ class EnvironDielectricData(Data):
         super().__init__(**kwargs)
 
     def append_dielectric(
-        self, static_permittivity: float, optical_permittivity: float, position: Tuple[float], spread: float, dim: int, axis: int
+        self, static_permittivity: float, optical_permittivity: float, position: Tuple[float], width: float, spread: float, dim: int, axis: int
     ):
         dielectric = EnvironDielectric(
             static_permittivity=static_permittivity,
             optical_permittivity=optical_permittivity,
             position=position,
+            width=width,
             spread=spread,
             dim=dim,
             axis=axis
@@ -283,7 +307,7 @@ class EnvironDielectricData(Data):
             inputappend += (
                 f"{dielectric.static_permittivity} {dielectric.optical_permittivity} "
                 f"{dielectric.position[0]:10.6f} {dielectric.position[1]:10.6f} {dielectric.position[2]:10.6f} "
-                f"{dielectric.spread:10.6f} {dielectric.dim:d} {dielectric.axis:d}\n"
+                f"{dielectric.width:10.6f} {dielectric.spread:10.6f} {dielectric.dim:d} {dielectric.axis:d}\n"
             )
 
         return inputappend

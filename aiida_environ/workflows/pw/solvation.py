@@ -67,7 +67,18 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
             cls.results,
         )
         spec.output("solvation_energy", valid_type=Float)
-        
+
+        spec.expose_outputs(
+            EnvPwBaseWorkChain,
+            namespace='vacuum',
+            required=False,
+        )
+
+        spec.expose_outputs(
+            EnvPwBaseWorkChain,
+            namespace='solution',
+        )
+
         spec.exit_code(
             400,'ERROR_VACUUM_FAILED',
             message='Vacuum Calculation Failed'
@@ -158,6 +169,9 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
         else:
             self.report(f'Vacuum `EnvPwBaseWorkChain` succeeded')
             self.ctx.vacuum_outputs = self.exposed_outputs(workchain, EnvPwBaseWorkChain, agglomerate=False)
+            self.out_many(
+                self.exposed_outputs(workchain, EnvPwBaseWorkChain, namespace='vacuum', agglomerate=False)
+            )
         return
 
     def should_run_vacuum(self):
@@ -225,6 +239,9 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
             return self.exit_codes.ERROR_SOLUTION_FAILED
         else:
             self.report(f'Solution `EnvPwBaseWorkChain` succeeded')
+            self.out_many(
+                self.exposed_outputs(workchain, EnvPwBaseWorkChain, namespace='solution', agglomerate=False)
+            )
         return
 
     def results(self):

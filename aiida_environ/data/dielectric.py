@@ -158,7 +158,7 @@ class EnvironDielectric:
         """
         return self._width
 
-    @spread.setter
+    @width.setter
     def width(self, value: float):
         """Set the width of the dielectric region
 

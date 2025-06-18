@@ -71,7 +71,7 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
         spec.expose_outputs(
             EnvPwBaseWorkChain,
             namespace='vacuum',
-            required=False,
+            namespace_options={'required': False},
         )
 
         spec.expose_outputs(

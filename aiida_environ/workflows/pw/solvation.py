@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from aiida.common import AttributeDict
 from aiida.engine import if_, ToContext, WorkChain, calcfunction
-from aiida.orm import Dict, Float
+from aiida.orm import Dict, Float, Bool
 from aiida.plugins import WorkflowFactory
 from aiida_quantumespresso.utils.mapping import prepare_process_inputs
 from aiida_quantumespresso.workflows.protocols.utils import ProtocolMixin, recursive_merge
@@ -53,6 +53,16 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
             required=False,
             help=(
                 "The vacuum energy in eV, if provided, skips the vacuum "
+                "calculation"),
+        )
+        spec.input(
+            'use_vacuum_output_structure',
+            valid_type=Bool,
+            default=Bool(True),
+            required=False,
+            help=(
+                "Use the relaxed geometry from the calculation in "
+                "vacuum as the initial structure in the solution "
                 "calculation"),
         )
         spec.outline(
@@ -196,7 +206,8 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
             parameters['ELECTRONS']['startingpot'] = 'file'
             self.ctx.solution_inputs.pw.parameters = parameters
             if (parameters['CONTROL']['calculation'] in ['relax', 'vc', 'vc-relax']
-                    and 'energy_vacuum' not in self.inputs):
+                    and 'energy_vacuum' not in self.inputs
+                    and self.inputs.use_vacuum_output_structure):
                 self.ctx.solution_inputs.base.pw.structure = self.ctx.vacuum_outputs.output_structure
 
         self.ctx.solution_inputs.pw.environ_parameters = deepcopy(

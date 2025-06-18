@@ -195,6 +195,10 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
             parameters['CONTROL']['restart_mode'] = 'from_scratch'
             parameters['ELECTRONS']['startingpot'] = 'file'
             self.ctx.solution_inputs.pw.parameters = parameters
+            if (parameters['CONTROL']['calculation'] in ['relax', 'vc', 'vc-relax']
+                    and 'energy_vacuum' not in self.inputs):
+                self.ctx.solution_inputs.base.pw.structure = self.ctx.vacuum_outputs.output_structure
+
         self.ctx.solution_inputs.pw.environ_parameters = deepcopy(
             recursive_merge(environ_parameters, solution_overrides)
         )

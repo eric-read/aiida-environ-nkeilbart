@@ -9,7 +9,7 @@ from aiida_quantumespresso.common.types import RelaxType
 from aiida_quantumespresso.utils.mapping import prepare_process_inputs
 from aiida_quantumespresso.workflows.protocols.utils import ProtocolMixin
 
-PwEnvCalculation = CalculationFactory("environ.pw")
+EnvPwCalculation = CalculationFactory("environ.pw")
 EnvPwBaseWorkChain = WorkflowFactory("environ.pw.base")
 
 

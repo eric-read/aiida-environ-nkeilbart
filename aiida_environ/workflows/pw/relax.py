@@ -271,15 +271,6 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         self.ctx.relax_inputs.pw.parameters.setdefault("CONTROL", {})
         self.ctx.relax_inputs.pw.parameters["CONTROL"]["restart_mode"] = "from_scratch"
 
-        # Adjust the inputs for the chosen relaxation scheme
-        if "relaxation_scheme" in self.inputs:
-            if self.inputs.relaxation_scheme.value in ("relax", "vc-relax"):
-                self.ctx.relax_inputs.pw.parameters["CONTROL"][
-                    "calculation"
-                ] = self.inputs.relaxation_scheme.value
-            else:
-                raise ValueError("unsupported value for the `relaxation_scheme` input.")
-
         # Set the meta_convergence and add it to the context
         self.ctx.meta_convergence = self.inputs.meta_convergence.value
         volume_cannot_change = (

@@ -21,7 +21,7 @@ def validate_inputs(inputs, _):
         return 'The parameters in `base.pw.parameters` do not specify the required key `CONTROL.calculation`.'
 
 
-class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
+class PwRelaxWorkChain(ProtocolMixin, WorkChain):
     """
     Workchain to relax a structure using Quantum ESPRESSO pw.x with Environ.
     """
@@ -32,7 +32,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         # yapf: disable
         super().define(spec)
         spec.expose_inputs(
-            EnvPwBaseWorkChain, 
+            EnvPwBaseWorkChain,
             namespace = 'base',
             exclude = (
                 'clean_workdir', 
@@ -45,7 +45,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
             }
         )
         spec.expose_inputs(
-            EnvPwBaseWorkChain, 
+            EnvPwBaseWorkChain,
             namespace = 'base_final_scf',
             exclude=('clean_workdir', 'pw.structure', 'pw.parent_folder'),
             namespace_options = {
@@ -201,7 +201,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
 
         if relax_type in (RelaxType.VOLUME, RelaxType.SHAPE, RelaxType.CELL):
             base.pw.settings = orm.Dict(
-                dict=EnvPwRelaxWorkChain._fix_atomic_positions(
+                dict=PwRelaxWorkChain._fix_atomic_positions(
                     structure, base.pw.settings
                 )
             )
@@ -291,7 +291,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         if 'base_final_scf' in self.inputs:
             self.ctx.final_scf_inputs = AttributeDict(
                 self.exposed_inputs(
-                    EnvPwBaseWorkChain, 
+                    EnvPwBaseWorkChain,
                     namespace='base_final_scf'
                     )
                 )
@@ -336,7 +336,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         inputs = self.ctx.relax_inputs
         inputs.pw.structure = self.ctx.current_structure
 
-        # If one of the nested `PwBaseWorkChains` changed the number of bands, apply it here
+        # If one of the nested `EnvPwBaseWorkChains` changed the number of bands, apply it here
         if self.ctx.current_number_of_bands is not None:
             inputs.pw.parameters.setdefault("SYSTEM", {})[
                 "nbnd"
@@ -380,7 +380,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
             structure = workchain.outputs.output_structure
         except exceptions.NotExistent:
             # If the calculation is set to 'scf', this is expected, so we are done
-            if self.inputs.base.pw.parameters["CONTROL"]["calculation"] == "scf":
+            if self.ctx.relax_inputs.base.pw.parameters["CONTROL"]["calculation"] == "scf":
                 self.ctx.is_converged = True
                 return
 
@@ -468,7 +468,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         # Get the latest relax workchain and pass the outputs
         final_relax_workchain = self.ctx.workchains[-1]
 
-        if self.inputs.base.pw.parameters["CONTROL"]["calculation"] != "scf":
+        if self.ctx.relax_inputs.base.pw.parameters["CONTROL"]["calculation"] != "scf":
             self.out("output_structure", final_relax_workchain.outputs.output_structure)
 
         try:

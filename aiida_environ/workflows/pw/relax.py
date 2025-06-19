@@ -21,7 +21,7 @@ def validate_inputs(inputs, _):
         return 'The parameters in `base.pw.parameters` do not specify the required key `CONTROL.calculation`.'
 
 
-class PwRelaxWorkChain(ProtocolMixin, WorkChain):
+class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
     """
     Workchain to relax a structure using Quantum ESPRESSO pw.x with Environ.
     """
@@ -201,7 +201,7 @@ class PwRelaxWorkChain(ProtocolMixin, WorkChain):
 
         if relax_type in (RelaxType.VOLUME, RelaxType.SHAPE, RelaxType.CELL):
             base.pw.settings = orm.Dict(
-                dict=PwRelaxWorkChain._fix_atomic_positions(
+                dict=EnvPwRelaxWorkChain._fix_atomic_positions(
                     structure, base.pw.settings
                 )
             )

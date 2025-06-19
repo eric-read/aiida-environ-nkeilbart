@@ -10,7 +10,7 @@ from aiida_quantumespresso.utils.mapping import prepare_process_inputs
 from aiida_quantumespresso.workflows.protocols.utils import ProtocolMixin
 
 PwEnvCalculation = CalculationFactory("environ.pw")
-PwBaseWorkChain = WorkflowFactory("environ.pw.base")
+EnvPwBaseWorkChain = WorkflowFactory("environ.pw.base")
 
 
 def validate_inputs(inputs, _):
@@ -32,7 +32,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         # yapf: disable
         super().define(spec)
         spec.expose_inputs(
-            PwBaseWorkChain, 
+            EnvPwBaseWorkChain, 
             namespace = 'base',
             exclude = (
                 'clean_workdir', 
@@ -45,7 +45,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
             }
         )
         spec.expose_inputs(
-            PwBaseWorkChain, 
+            EnvPwBaseWorkChain, 
             namespace = 'base_final_scf',
             exclude=('clean_workdir', 'pw.structure', 'pw.parent_folder'),
             namespace_options = {
@@ -111,7 +111,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
             message='the final scf PwBaseWorkChain sub process failed'
         )
         spec.expose_outputs(
-            PwBaseWorkChain,
+            EnvPwBaseWorkChain,
             exclude=('output_structure',)
         )
         spec.output(
@@ -172,13 +172,13 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         inputs = cls.get_protocol_inputs(protocol, overrides)
         environ = inputs.get("environ", None)
 
-        base = PwBaseWorkChain.get_builder_from_protocol(
+        base = EnvPwBaseWorkChain.get_builder_from_protocol(
             *args, 
             overrides=inputs.get("base", None), 
             options = options,
             **kwargs
         )
-        base_final_scf = PwBaseWorkChain.get_builder_from_protocol(
+        base_final_scf = EnvPwBaseWorkChain.get_builder_from_protocol(
             *args, 
             overrides=inputs.get("base_final_scf", None), 
             options = options,
@@ -262,7 +262,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         self.ctx.iteration = 0
 
         self.ctx.relax_inputs = AttributeDict(
-            self.exposed_inputs(PwBaseWorkChain, namespace="base")
+            self.exposed_inputs(EnvPwBaseWorkChain, namespace="base")
         )
         self.ctx.relax_inputs.pw.parameters = (
             self.ctx.relax_inputs.pw.parameters.get_dict()
@@ -300,7 +300,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         if 'base_final_scf' in self.inputs:
             self.ctx.final_scf_inputs = AttributeDict(
                 self.exposed_inputs(
-                    PwBaseWorkChain, 
+                    EnvPwBaseWorkChain, 
                     namespace='base_final_scf'
                     )
                 )
@@ -354,8 +354,8 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         # Set the `CALL` link label
         inputs.metadata.call_link_label = f"iteration_{self.ctx.iteration:02d}"
 
-        inputs = prepare_process_inputs(PwBaseWorkChain, inputs)
-        running = self.submit(PwBaseWorkChain, **inputs)
+        inputs = prepare_process_inputs(EnvPwBaseWorkChain, inputs)
+        running = self.submit(EnvPwBaseWorkChain, **inputs)
 
         self.report(f"launching PwBaseWorkChain<{running.pk}>")
 
@@ -378,7 +378,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         if (
             workchain.is_failed
             and workchain.exit_status
-            not in PwBaseWorkChain.get_exit_statuses(acceptable_statuses)
+            not in EnvPwBaseWorkChain.get_exit_statuses(acceptable_statuses)
         ):
             self.report(
                 f"relax PwBaseWorkChain failed with exit status {workchain.exit_status}"
@@ -447,8 +447,8 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
                 "nbnd"
             ] = self.ctx.current_number_of_bands
 
-        inputs = prepare_process_inputs(PwBaseWorkChain, inputs)
-        running = self.submit(PwBaseWorkChain, **inputs)
+        inputs = prepare_process_inputs(EnvPwBaseWorkChain, inputs)
+        running = self.submit(EnvPwBaseWorkChain, **inputs)
 
         self.report(f"launching PwBaseWorkChain<{running.pk}> for final scf")
 
@@ -481,9 +481,9 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
             self.out("output_structure", final_relax_workchain.outputs.output_structure)
 
         try:
-            self.out_many(self.exposed_outputs(self.ctx.workchain_scf, PwBaseWorkChain))
+            self.out_many(self.exposed_outputs(self.ctx.workchain_scf, EnvPwBaseWorkChain))
         except AttributeError:
-            self.out_many(self.exposed_outputs(final_relax_workchain, PwBaseWorkChain))
+            self.out_many(self.exposed_outputs(final_relax_workchain, EnvPwBaseWorkChain))
 
     def on_terminated(self):
         """Clean the working directories of all child calculations if `clean_workdir=True` in the inputs."""

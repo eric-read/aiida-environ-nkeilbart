@@ -46,7 +46,7 @@ PwCalculation = CalculationFactory("environ.pw")
 
 class EnvPwBaseWorkChain(ProtocolMixin, BaseRestartWorkChain):
     """
-    Workchain to run a Quantum ESPRESSO pw.x calculation with automated 
+    Workchain to run a Quantum ESPRESSO pw.x calculation with Environ and automated
     error handling and restarts.
     """
 
@@ -606,13 +606,13 @@ class EnvPwBaseWorkChain(ProtocolMixin, BaseRestartWorkChain):
     @process_handler(
         priority=585,
         exit_codes=[
-            PwCalculation.exit_codes.ERROR_COMPUTING_CHOLESKY,
-            PwCalculation.exit_codes.ERROR_DIAGONALIZATION_TOO_MANY_BANDS_NOT_CONVERGED,
-            PwCalculation.exit_codes.ERROR_S_MATRIX_NOT_POSITIVE_DEFINITE,
-            PwCalculation.exit_codes.ERROR_ZHEGVD_FAILED,
-            PwCalculation.exit_codes.ERROR_QR_FAILED,
-            PwCalculation.exit_codes.ERROR_EIGENVECTOR_CONVERGENCE,
-            PwCalculation.exit_codes.ERROR_BROYDEN_FACTORIZATION,
+            EnvPwCalculation.exit_codes.ERROR_COMPUTING_CHOLESKY,
+            EnvPwCalculation.exit_codes.ERROR_DIAGONALIZATION_TOO_MANY_BANDS_NOT_CONVERGED,
+            EnvPwCalculation.exit_codes.ERROR_S_MATRIX_NOT_POSITIVE_DEFINITE,
+            EnvPwCalculation.exit_codes.ERROR_ZHEGVD_FAILED,
+            EnvPwCalculation.exit_codes.ERROR_QR_FAILED,
+            EnvPwCalculation.exit_codes.ERROR_EIGENVECTOR_CONVERGENCE,
+            EnvPwCalculation.exit_codes.ERROR_BROYDEN_FACTORIZATION,
         ],
     )
     def handle_diagonalization_errors(self, calculation):
@@ -667,7 +667,7 @@ class EnvPwBaseWorkChain(ProtocolMixin, BaseRestartWorkChain):
         return ProcessHandlerReport(True)
 
     @process_handler(priority=575, exit_codes=[
-        PwCalculation.exit_codes.ERROR_IONIC_INTERRUPTED_PARTIAL_TRAJECTORY,
+        EnvPwCalculation.exit_codes.ERROR_IONIC_INTERRUPTED_PARTIAL_TRAJECTORY,
     ])
     def handle_ionic_interrupted_partial_trajectory(self, calculation):
         """Handle `ERROR_IONIC_INTERRUPTED_PARTIAL_TRAJECTORY` exit code.
@@ -701,8 +701,8 @@ class EnvPwBaseWorkChain(ProtocolMixin, BaseRestartWorkChain):
     @process_handler(
         priority=561,
         exit_codes=[
-            PwCalculation.exit_codes.ERROR_IONIC_CYCLE_BFGS_HISTORY_FAILURE,
-            PwCalculation.exit_codes.ERROR_IONIC_CYCLE_BFGS_HISTORY_AND_FINAL_SCF_FAILURE,
+            EnvPwCalculation.exit_codes.ERROR_IONIC_CYCLE_BFGS_HISTORY_FAILURE,
+            EnvPwCalculation.exit_codes.ERROR_IONIC_CYCLE_BFGS_HISTORY_AND_FINAL_SCF_FAILURE,
         ]
     )
     def handle_relax_recoverable_ionic_convergence_bfgs_history_error(self, calculation):
@@ -765,7 +765,7 @@ class EnvPwBaseWorkChain(ProtocolMixin, BaseRestartWorkChain):
 
     @process_handler(
         priority=555, exit_codes=[
-            PwCalculation.exit_codes.ERROR_RADIAL_FFT_SIGNIFICANT_VOLUME_CONTRACTION,
+            EnvPwCalculation.exit_codes.ERROR_RADIAL_FFT_SIGNIFICANT_VOLUME_CONTRACTION,
         ]
     )
     def handle_vcrelax_recoverable_fft_significant_volume_contraction_error(self, calculation):

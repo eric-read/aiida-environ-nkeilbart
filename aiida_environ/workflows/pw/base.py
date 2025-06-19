@@ -28,7 +28,6 @@ EnvPwCalculation = CalculationFactory("environ.pw")
 SsspFamily = GroupFactory("pseudo.family.sssp")
 PseudoDojoFamily = GroupFactory("pseudo.family.pseudo_dojo")
 CutoffsPseudoPotentialFamily = GroupFactory("pseudo.family.cutoffs")
-PwCalculation = dCalculationFactory("environ.pw")
 
 
 # def validate_pseudo_family(value, _):

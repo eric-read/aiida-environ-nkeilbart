@@ -58,7 +58,7 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
         spec.input(
             'use_vacuum_output_structure',
             valid_type=Bool,
-            default=Bool(True),
+            default=lambda: Bool(True),
             required=False,
             help=(
                 "Use the relaxed geometry from the calculation in "

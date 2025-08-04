@@ -468,7 +468,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         # Get the latest relax workchain and pass the outputs
         final_relax_workchain = self.ctx.workchains[-1]
 
-        if self.ctx.relax_inputs.base.pw.parameters["CONTROL"]["calculation"] != "scf":
+        if self.ctx.relax_inputs.pw.parameters["CONTROL"]["calculation"] != "scf":
             self.out("output_structure", final_relax_workchain.outputs.output_structure)
 
         try:

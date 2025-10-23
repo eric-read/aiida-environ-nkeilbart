@@ -17,7 +17,7 @@ import time
 from aiida import orm
 from aiida.common.extendeddicts import AttributeDict
 from aiida.common.lang import type_check
-from aiida.engine import WorkChain, calcfunction, if_
+from aiida.engine import WorkChain, calcfunction, if_, while_
 from aiida.plugins import CalculationFactory, DataFactory, WorkflowFactory
 from aiida_quantumespresso.calculations.functions.create_kpoints_from_distance import create_kpoints_from_distance
 from aiida_quantumespresso.workflows.protocols.utils import ProtocolMixin
@@ -178,6 +178,10 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
             help='Time in seconds to wait before submitting subsequent displaced structure scf calculations.',
         )
         spec.input(
+                'settings.max_concurrent_base_workchains', valid_type=int, non_db=True, default=20,
+                help='Maximum number of concurrent running `EnvPwBaseWorkChain`.'
+        )
+        spec.input(
             'clean_workdir', valid_type=orm.Bool, default=lambda: orm.Bool(False),
             help='If `True`, work directories of all called calculation will be cleaned at the end of execution.'
         )
@@ -187,7 +191,10 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
             cls.set_reference_kpoints,
             cls.run_base_supercell,
             cls.inspect_base_supercell,
-            cls.run_forces,
+            cls.run_supercells,
+            while_(cls.should_run_forces)(
+                cls.run_forces,
+            ),
             cls.inspect_all_runs,
             cls.set_phonopy_data,
             if_(cls.should_run_phonopy)(
@@ -433,9 +440,9 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
             bands = workchain.outputs.output_band
             fermi_energy = parameters.fermi_energy
             self.ctx.is_insulator, _ = orm.find_bandgap(bands, fermi_energy=fermi_energy)
-
-    def run_forces(self):
-        """Run an scf for each supercell with displacements."""
+    
+    def run_supercells(self):
+        """Run supercell with displacements."""
         if self.ctx.plus_hubbard or self.ctx.old_plus_hubbard:
             supercells = get_supercells_for_hubbard(
                 preprocess_data=self.ctx.preprocess_data,
@@ -443,13 +450,28 @@ class EnvPhononWorkChain(WorkChain, ProtocolMixin):
             )
         else:
             supercells = self.ctx.preprocess_data.calcfunctions.get_supercells_with_displacements()
-
+        
+        self.ctx.supercells = []
+        for key, value in supercells.items():
+            self.ctx.supercells.append((key, value))
+        
         self.out('supercells', supercells)
 
+    def should_run_forces(self):
+        """Whether to run or not forces."""
+        return len(self.ctx.supercells) > 0
+
+    def run_forces(self):
+        """Run an scf for each supercell with displacements."""
         base_key = f'{self._RUN_PREFIX}_0'
         base_out = self.ctx[base_key].outputs
+        
+        n_base_parallel = self.inputs.settings.max_concurrent_base_workchains
+        if self.inputs.settings.max_concurrent_base_workchains < 0:
+            n_base_parallel = len(self.ctx.supercells)
 
-        for key, supercell in supercells.items():
+        for _ in self.ctx.supercells[:n_base_parallel]:
+            key, supercell = self.ctx.supercells.pop(0)
             num = key.split('_')[-1]
             label = f'{self._RUN_PREFIX}_{num}'
 

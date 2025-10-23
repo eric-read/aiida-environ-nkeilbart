@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from aiida.common import AttributeDict
 from aiida.engine import if_, ToContext, WorkChain, calcfunction
-from aiida.orm import Dict, Float, Bool
+from aiida.orm import Dict, Float, Bool, CalcJobNode
 from aiida.plugins import WorkflowFactory
 from aiida_quantumespresso.utils.mapping import prepare_process_inputs
 from aiida_quantumespresso.workflows.protocols.utils import ProtocolMixin, recursive_merge
@@ -31,21 +31,22 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
         spec.expose_inputs(
             EnvPwBaseWorkChain,
             namespace="base",
+            exclude=('clean_workdir'),
             namespace_options={
-                "help": "Inputs for the `EnvPwBaseCalculation`."
+                "help": "General inputs for the `EnvPwBaseCalculation`."
             },
         )
         spec.input(
             "environ_vacuum",
             valid_type=Dict,
             required=False,
-            help="The base parameter input for an environ simulation",
+            help="The environ inputs to run an environ simulation in vacuum",
         )
         spec.input(
             "environ_solution",
             valid_type=Dict,
             required=False,
-            help="The base parameter input for an environ simulation",
+            help="The environ inputs to run an environ simulation in solution",
         )
         spec.input(
             "energy_vacuum",
@@ -61,9 +62,18 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
             default=lambda: Bool(True),
             required=False,
             help=(
-                "Use the relaxed geometry from the calculation in "
+                "Use the relaxed geometry from the environ simulation in "
                 "vacuum as the initial structure in the solution "
                 "calculation"),
+        )
+        spec.input(
+            'clean_workdir',
+            valid_type=Bool,
+            default=lambda: Bool(True),
+            required=False,
+            help=(
+                "If `True`, work directories of all called calculations will be cleaned at the end of execution."
+            )
         )
         spec.outline(
             if_(cls.should_run_vacuum)(
@@ -178,7 +188,6 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
             return self.exit_codes.ERROR_VACUUM_FAILED
         else:
             self.report(f'Vacuum `EnvPwBaseWorkChain` succeeded')
-            self.ctx.vacuum_outputs = self.exposed_outputs(workchain, EnvPwBaseWorkChain, agglomerate=False)
             self.out_many(
                 self.exposed_outputs(workchain, EnvPwBaseWorkChain, namespace='vacuum', agglomerate=False)
             )
@@ -198,52 +207,43 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
             solution_overrides = self.inputs.environ_solution.get_dict()
         else:
             solution_overrides = {}
-        if self.should_run_vacuum():
-            parameters = self.ctx.solution_inputs.pw.parameters.get_dict()
-            parameters['CONTROL']['restart_mode'] = 'from_scratch'
-            if (parameters['CONTROL']['calculation'] in ['relax', 'vc', 'vc-relax']
-                    and 'energy_vacuum' not in self.inputs):
-                if self.inputs.use_vacuum_output_structure:
-                    self.ctx.solution_inputs.base.pw.structure = self.ctx.vacuum_outputs.output_structure
-                    self.ctx.solution_inputs.pw.parent_folder = self.ctx.vacuum_workchain.outputs.remote_folder
-                    parameters['ELECTRONS']['startingpot'] = 'file'
-                    solution_overrides['ENVIRON']['environ_restart'] = True
-                else:
-                    solution_overrides['ENVIRON']['environ_restart'] = False
-                    parameters['ELECTRONS']['startingpot'] = 'atomic+random'
-            else:
-                parameters['ELECTRONS']['startingpot'] = 'file'
-                self.ctx.solution_inputs.pw.parent_folder = self.ctx.vacuum_workchain.outputs.remote_folder
-                solution_overrides['ENVIRON']['environ_restart'] = True
+        parameters = self.ctx.solution_inputs.pw.parameters.get_dict()
+        parameters['CONTROL']['restart_mode'] = 'from_scratch'
+        calculation_type = parameters['CONTROL']['calculation']
+        if calculation_type == 'scf':
+            #Use potential and wfc from vacuum calculation to speed up solution calculation
+            self.ctx.solution_inputs.pw.parent_folder = self.ctx.vacuum_workchain.outputs.remote_folder
+            parameters['ELECTRONS']['startingpot'] = 'file'
+            parameters['ELECTRONS']['startingwfc'] = 'file'
+            solution_overrides['ENVIRON']['environ_restart'] = True
+        elif calculation_type in ['relax', 'vc', 'vc-relax'] and self.inputs.use_vacuum_output_structure:
+            #Use potential and wfc from vacuum calculation to speed up solution calculation
+            self.ctx.solution_inputs.pw.structure = self.ctx.vacuum_workchain.outputs.output_structure
+            self.ctx.solution_inputs.pw.parent_folder = self.ctx.vacuum_workchain.outputs.remote_folder
+            parameters['ELECTRONS']['startingpot'] = 'file'
+            parameters['ELECTRONS']['startingwfc'] = 'file'
+            solution_overrides['ENVIRON']['environ_restart'] = True
+        
         self.ctx.solution_inputs.pw.parameters = parameters
-
+        
+        #Merge base environ_parameters and solution overrides
         self.ctx.solution_inputs.pw.environ_parameters = deepcopy(
             recursive_merge(environ_parameters, solution_overrides)
         )
-        self.ctx.solution_inputs.pw.environ_parameters.setdefault("ENVIRON", {})
-        self.ctx.solution_inputs.pw.environ_parameters["ENVIRON"].setdefault(
-            "verbose", 0
-        )
-        self.ctx.solution_inputs.pw.environ_parameters["ENVIRON"].setdefault(
-            "environ_thr", 1e-1
-        )
-        self.ctx.solution_inputs.pw.environ_parameters["ENVIRON"].setdefault(
-            "environ_type", "water"
-        )
-        self.ctx.solution_inputs.pw.environ_parameters["ENVIRON"].setdefault(
-            "environ_restart", False
-        )
-        self.ctx.solution_inputs.pw.environ_parameters["ENVIRON"].setdefault(
-            "env_electrostatic", True
-        )
-
-        self.ctx.solution_inputs.pw.environ_parameters.setdefault("ELECTROSTATIC", {})
-        self.ctx.solution_inputs.pw.environ_parameters["ELECTROSTATIC"].setdefault(
-            "solver", "cg"
-        )
-        self.ctx.solution_inputs.pw.environ_parameters["ELECTROSTATIC"].setdefault(
-            "auxiliary", "none"
-        )
+        #self.ctx.solution_inputs.pw.environ_parameters.setdefault("ENVIRON", {})
+        #self.ctx.solution_inputs.pw.environ_parameters['ENVIRON'].setdefault(
+        #        "verbose", 0
+        #)
+        #self.ctx.solution_inputs.pw.environ_parameters['ENVIRON'].setdefault(
+        #        "environ_restart", False
+        #)
+        #self.ctx.solution_inputs.pw.environ_parameters['ENVIRON'].setdefault(
+        #        "env_electrostatic", True
+        #)
+        #self.ctx.solution_inputs.pw.environ_parameters.setdefault("ELECTROSTATIC", {})
+        #self.ctx.solution_inputs.pw.environ_parameters.setdefault(
+        #        "solver", 'cg'
+        #)
 
         return
     
@@ -277,3 +277,24 @@ class PwSolvationWorkChain(WorkChain, ProtocolMixin):
         self.ctx.energy_difference = subtract_energy(Float(e_solvent), Float(e_vacuum))
         self.out("solvation_energy", self.ctx.energy_difference)
         return
+
+    def on_terminated(self):
+        """Clean the working directories of all child calculations if `clean_workdir=True` in the inputs."""
+        super().on_terminated()
+        if self.inputs.clean_workdir.value is False:
+            self.report('remote folders will not be clean')
+            return
+        
+        cleaned_calcs = []
+
+        for called_descendant in self.node.called_descendants:
+            if isinstance(called_descendant, CalcJobNode):
+                try:
+                    called_descendant.outputs.remote_folder._clean() # pylint: disable=protected-access
+                    cleaned_calcs.append(called_descendant.pk)
+                except (IOError, OSError, KeyError):
+                    pass
+
+        if cleaned_calcs:
+            self.report(f"cleaned remote folders of calculations: {' '.join(map(str, cleaned_calcs))}")
+

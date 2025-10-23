@@ -9,8 +9,8 @@ from aiida_quantumespresso.common.types import RelaxType
 from aiida_quantumespresso.utils.mapping import prepare_process_inputs
 from aiida_quantumespresso.workflows.protocols.utils import ProtocolMixin
 
-PwEnvCalculation = CalculationFactory("environ.pw")
-PwBaseWorkChain = WorkflowFactory("environ.pw.base")
+EnvPwCalculation = CalculationFactory("environ.pw")
+EnvPwBaseWorkChain = WorkflowFactory("environ.pw.base")
 
 
 def validate_inputs(inputs, _):
@@ -32,7 +32,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         # yapf: disable
         super().define(spec)
         spec.expose_inputs(
-            PwBaseWorkChain, 
+            EnvPwBaseWorkChain,
             namespace = 'base',
             exclude = (
                 'clean_workdir', 
@@ -45,7 +45,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
             }
         )
         spec.expose_inputs(
-            PwBaseWorkChain, 
+            EnvPwBaseWorkChain,
             namespace = 'base_final_scf',
             exclude=('clean_workdir', 'pw.structure', 'pw.parent_folder'),
             namespace_options = {
@@ -103,15 +103,15 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         spec.exit_code(
             401, 
             'ERROR_SUB_PROCESS_FAILED_RELAX',
-            message='the relax PwBaseWorkChain sub process failed'
+            message='the relax EnvPwBaseWorkChain sub process failed'
         )
         spec.exit_code(
             402, 
             'ERROR_SUB_PROCESS_FAILED_FINAL_SCF',
-            message='the final scf PwBaseWorkChain sub process failed'
+            message='the final scf EnvPwBaseWorkChain sub process failed'
         )
         spec.expose_outputs(
-            PwBaseWorkChain,
+            EnvPwBaseWorkChain,
             exclude=('output_structure',)
         )
         spec.output(
@@ -149,7 +149,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         chosen protocol.
 
         :param code: the ``Code`` instance configured for the 
-                     ``quantumespresso.pw`` plugin.
+                     ``environ.pw`` plugin.
         :param structure: the ``StructureData`` instance to use.
         :param protocol: protocol to use, if not specified, the default will 
                          be used.
@@ -172,13 +172,13 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         inputs = cls.get_protocol_inputs(protocol, overrides)
         environ = inputs.get("environ", None)
 
-        base = PwBaseWorkChain.get_builder_from_protocol(
+        base = EnvPwBaseWorkChain.get_builder_from_protocol(
             *args, 
             overrides=inputs.get("base", None), 
             options = options,
             **kwargs
         )
-        base_final_scf = PwBaseWorkChain.get_builder_from_protocol(
+        base_final_scf = EnvPwBaseWorkChain.get_builder_from_protocol(
             *args, 
             overrides=inputs.get("base_final_scf", None), 
             options = options,
@@ -262,7 +262,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         self.ctx.iteration = 0
 
         self.ctx.relax_inputs = AttributeDict(
-            self.exposed_inputs(PwBaseWorkChain, namespace="base")
+            self.exposed_inputs(EnvPwBaseWorkChain, namespace="base")
         )
         self.ctx.relax_inputs.pw.parameters = (
             self.ctx.relax_inputs.pw.parameters.get_dict()
@@ -270,15 +270,6 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
 
         self.ctx.relax_inputs.pw.parameters.setdefault("CONTROL", {})
         self.ctx.relax_inputs.pw.parameters["CONTROL"]["restart_mode"] = "from_scratch"
-
-        # Adjust the inputs for the chosen relaxation scheme
-        if "relaxation_scheme" in self.inputs:
-            if self.inputs.relaxation_scheme.value in ("relax", "vc-relax"):
-                self.ctx.relax_inputs.pw.parameters["CONTROL"][
-                    "calculation"
-                ] = self.inputs.relaxation_scheme.value
-            else:
-                raise ValueError("unsupported value for the `relaxation_scheme` input.")
 
         # Set the meta_convergence and add it to the context
         self.ctx.meta_convergence = self.inputs.meta_convergence.value
@@ -300,7 +291,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         if 'base_final_scf' in self.inputs:
             self.ctx.final_scf_inputs = AttributeDict(
                 self.exposed_inputs(
-                    PwBaseWorkChain, 
+                    EnvPwBaseWorkChain,
                     namespace='base_final_scf'
                     )
                 )
@@ -308,7 +299,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
             if self.ctx.relax_inputs.pw.parameters['CONTROL'].get('calculation', 'scf') == 'scf':
                 self.report(
                     'Work chain will not run final SCF when `calculation` is set to `scf` for the relaxation '
-                    '`PwBaseWorkChain`.'
+                    '`EnvPwBaseWorkChain`.'
                 )
                 self.ctx.pop('final_scf_inputs')
 
@@ -339,13 +330,13 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         return self.ctx.is_converged and "final_scf_inputs" in self.ctx
 
     def run_relax(self):
-        """Run the `PwBaseWorkChain` to run a relax `PwEnvCalculation`."""
+        """Run the `EnvPwBaseWorkChain` to run a relax `EnvPwCalculation`."""
         self.ctx.iteration += 1
 
         inputs = self.ctx.relax_inputs
         inputs.pw.structure = self.ctx.current_structure
 
-        # If one of the nested `PwBaseWorkChains` changed the number of bands, apply it here
+        # If one of the nested `EnvPwBaseWorkChains` changed the number of bands, apply it here
         if self.ctx.current_number_of_bands is not None:
             inputs.pw.parameters.setdefault("SYSTEM", {})[
                 "nbnd"
@@ -354,15 +345,15 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         # Set the `CALL` link label
         inputs.metadata.call_link_label = f"iteration_{self.ctx.iteration:02d}"
 
-        inputs = prepare_process_inputs(PwBaseWorkChain, inputs)
-        running = self.submit(PwBaseWorkChain, **inputs)
+        inputs = prepare_process_inputs(EnvPwBaseWorkChain, inputs)
+        running = self.submit(EnvPwBaseWorkChain, **inputs)
 
-        self.report(f"launching PwBaseWorkChain<{running.pk}>")
+        self.report(f"launching EnvPwBaseWorkChain<{running.pk}>")
 
         return ToContext(workchains=append_(running))
 
     def inspect_relax(self):
-        """Inspect the results of the last `PwBaseWorkChain`.
+        """Inspect the results of the last `EnvPwBaseWorkChain`.
 
         Compare the cell volume of the relaxed structure of the last completed workchain with the previous. If the
         difference ratio is less than the volume convergence threshold we consider the cell relaxation converged.
@@ -372,16 +363,16 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         acceptable_statuses = ["ERROR_IONIC_CONVERGENCE_REACHED_EXCEPT_IN_FINAL_SCF"]
 
         if workchain.is_excepted or workchain.is_killed:
-            self.report("relax PwBaseWorkChain was excepted or killed")
+            self.report("relax EnvPwBaseWorkChain was excepted or killed")
             return self.exit_codes.ERROR_SUB_PROCESS_FAILED_RELAX
 
         if (
             workchain.is_failed
             and workchain.exit_status
-            not in PwBaseWorkChain.get_exit_statuses(acceptable_statuses)
+            not in EnvPwBaseWorkChain.get_exit_statuses(acceptable_statuses)
         ):
             self.report(
-                f"relax PwBaseWorkChain failed with exit status {workchain.exit_status}"
+                f"relax EnvPwBaseWorkChain failed with exit status {workchain.exit_status}"
             )
             return self.exit_codes.ERROR_SUB_PROCESS_FAILED_RELAX
 
@@ -389,12 +380,12 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
             structure = workchain.outputs.output_structure
         except exceptions.NotExistent:
             # If the calculation is set to 'scf', this is expected, so we are done
-            if self.inputs.base.pw.parameters["CONTROL"]["calculation"] == "scf":
+            if self.ctx.relax_inputs.base.pw.parameters["CONTROL"]["calculation"] == "scf":
                 self.ctx.is_converged = True
                 return
 
             self.report(
-                "`vc-relax` or `relax` PwBaseWorkChain finished successfully but without output structure"
+                "`vc-relax` or `relax` EnvPwBaseWorkChain finished successfully but without output structure"
             )
             return self.exit_codes.ERROR_SUB_PROCESS_FAILED_RELAX
 
@@ -438,7 +429,7 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         return
 
     def run_final_scf(self):
-        """Run the `PwBaseWorkChain` to run a final scf `PwEnvCalculation` for the relaxed structure."""
+        """Run the `EnvPwBaseWorkChain` to run a final scf `EnvPwCalculation` for the relaxed structure."""
         inputs = self.ctx.final_scf_inputs
         inputs.pw.structure = self.ctx.current_structure
 
@@ -447,20 +438,20 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
                 "nbnd"
             ] = self.ctx.current_number_of_bands
 
-        inputs = prepare_process_inputs(PwBaseWorkChain, inputs)
-        running = self.submit(PwBaseWorkChain, **inputs)
+        inputs = prepare_process_inputs(EnvPwBaseWorkChain, inputs)
+        running = self.submit(EnvPwBaseWorkChain, **inputs)
 
-        self.report(f"launching PwBaseWorkChain<{running.pk}> for final scf")
+        self.report(f"launching EnvPwBaseWorkChain<{running.pk}> for final scf")
 
         return ToContext(workchain_scf=running)
 
     def inspect_final_scf(self):
-        """Inspect the result of the final scf `PwBaseWorkChain`."""
+        """Inspect the result of the final scf `EnvPwBaseWorkChain`."""
         workchain = self.ctx.workchain_scf
 
         if not workchain.is_finished_ok:
             self.report(
-                f"final scf PwBaseWorkChain failed with exit status {workchain.exit_status}"
+                f"final scf EnvPwBaseWorkChain failed with exit status {workchain.exit_status}"
             )
             return self.exit_codes.ERROR_SUB_PROCESS_FAILED_FINAL_SCF
 
@@ -477,13 +468,13 @@ class EnvPwRelaxWorkChain(ProtocolMixin, WorkChain):
         # Get the latest relax workchain and pass the outputs
         final_relax_workchain = self.ctx.workchains[-1]
 
-        if self.inputs.base.pw.parameters["CONTROL"]["calculation"] != "scf":
+        if self.ctx.relax_inputs.pw.parameters["CONTROL"]["calculation"] != "scf":
             self.out("output_structure", final_relax_workchain.outputs.output_structure)
 
         try:
-            self.out_many(self.exposed_outputs(self.ctx.workchain_scf, PwBaseWorkChain))
+            self.out_many(self.exposed_outputs(self.ctx.workchain_scf, EnvPwBaseWorkChain))
         except AttributeError:
-            self.out_many(self.exposed_outputs(final_relax_workchain, PwBaseWorkChain))
+            self.out_many(self.exposed_outputs(final_relax_workchain, EnvPwBaseWorkChain))
 
     def on_terminated(self):
         """Clean the working directories of all child calculations if `clean_workdir=True` in the inputs."""
